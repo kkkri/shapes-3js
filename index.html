@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Interface with Tweakpane</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #tweakpane-container {
+      width: 300px;
+      height: 100%;
+      background-color: #f0f0f0;
+      box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
+    }
+
+    #threejs-container {
+      flex: 1;
+      display: flex;
+    }
+  </style>
+</head>
+<body>
+  <div id="tweakpane-container"></div>
+  <div id="threejs-container"></div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.module.js';
+    import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
+
+    // === THREE.js Setup ===
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth - 300, window.innerHeight);
+    document.getElementById('threejs-container').appendChild(renderer.domElement);
+
+    // === Lights ===
+    const light = new THREE.PointLight(0xffffff, 1, 100);
+    light.position.set(10, 10, 10);
+    scene.add(light);
+
+    // === Shapes ===
+    const shapes = {
+      cube: new THREE.Mesh(
+        new THREE.BoxGeometry(),
+        new THREE.MeshStandardMaterial({ color: 0x007bff, roughness: 0.5, metalness: 0.5 })
+      ),
+      sphere: new THREE.Mesh(
+        new THREE.SphereGeometry(0.75, 32, 32),
+        new THREE.MeshStandardMaterial({ color: 0xff5722, roughness: 0.5, metalness: 0.5 })
+      ),
+      cone: new THREE.Mesh(
+        new THREE.ConeGeometry(0.75, 1.5, 32),
+        new THREE.MeshStandardMaterial({ color: 0x8bc34a, roughness: 0.5, metalness: 0.5 })
+      ),
+    };
+
+    shapes.cube.position.x = -2;
+    shapes.sphere.position.x = 0;
+    shapes.cone.position.x = 2;
+
+    Object.values(shapes).forEach((shape) => scene.add(shape));
+
+    // === Camera Setup ===
+    camera.position.z = 5;
+
+    // === Tweakpane Setup ===
+    const pane = new Pane({ container: document.getElementById('tweakpane-container') });
+
+    const PARAMS = {
+      sceneColor: '#ffffff', // Scene background color
+      ambientLight: 1,      // Ambient light intensity
+      cameraZoom: 5,        // Camera zoom
+      shapes: {
+        cube: { color: '#007bff', size: 1, roughness: 0.5, metalness: 0.5, x: -2, y: 0, z: 0, rotationSpeedX: 0.01, rotationSpeedY: 0.01, rotationSpeedZ: 0.01 },
+        sphere: { color: '#ff5722', size: 1, roughness: 0.5, metalness: 0.5, x: 0, y: 0, z: 0, rotationSpeedX: 0.01, rotationSpeedY: 0.01, rotationSpeedZ: 0.01 },
+        cone: { color: '#8bc34a', size: 1, roughness: 0.5, metalness: 0.5, x: 2, y: 0, z: 0, rotationSpeedX: 0.01, rotationSpeedY: 0.01, rotationSpeedZ: 0.01 },
+      },
+    };
+
+    // === Global Scene Controls ===
+    pane.addBinding(PARAMS, 'sceneColor', { label: 'Background Color' }).on('change', () => {
+      scene.background = new THREE.Color(PARAMS.sceneColor);
+    });
+
+    pane.addBinding(PARAMS, 'cameraZoom', {
+      label: 'Camera Zoom',
+      min: 1,
+      max: 10,
+      step: 0.1,
+    }).on('change', () => {
+      camera.position.z = PARAMS.cameraZoom;
+    });
+
+    pane.addBinding(PARAMS, 'ambientLight', {
+      label: 'Ambient Light',
+      min: 0,
+      max: 2,
+      step: 0.1,
+    }).on('change', () => {
+      light.intensity = PARAMS.ambientLight;
+    });
+
+    // === Shape-Specific Controls ===
+    Object.entries(PARAMS.shapes).forEach(([name, params]) => {
+      const shape = shapes[name];
+      const folder = pane.addFolder({ title: `${name.charAt(0).toUpperCase() + name.slice(1)} Controls` });
+
+      folder.addBinding(params, 'color', { label: 'Color' }).on('change', () => {
+        shape.material.color.set(params.color);
+      });
+
+      folder.addBinding(params, 'x', { min: -5, max: 5, step: 0.1, label: 'Position X' }).on('change', () => {
+        shape.position.x = params.x;
+      });
+
+      folder.addBinding(params, 'y', { min: -5, max: 5, step: 0.1, label: 'Position Y' }).on('change', () => {
+        shape.position.y = params.y;
+      });
+
+      folder.addBinding(params, 'z', { min: -5, max: 5, step: 0.1, label: 'Position Z' }).on('change', () => {
+        shape.position.z = params.z;
+      });
+
+      folder.addBinding(params, 'rotationSpeedX', { min: 0, max: 0.1, step: 0.01, label: 'Rotation X' });
+      folder.addBinding(params, 'rotationSpeedY', { min: 0, max: 0.1, step: 0.01, label: 'Rotation Y' });
+      folder.addBinding(params, 'rotationSpeedZ', { min: 0, max: 0.1, step: 0.01, label: 'Rotation Z' });
+
+      folder.addBinding(params, 'size', { min: 0.5, max: 3, step: 0.1 }).on('change', () => {
+        shape.scale.set(params.size, params.size, params.size);
+      });
+
+      folder.addBinding(params, 'roughness', { min: 0, max: 1, step: 0.1 }).on('change', () => {
+        shape.material.roughness = params.roughness;
+      });
+
+      folder.addBinding(params, 'metalness', { min: 0, max: 1, step: 0.1 }).on('change', () => {
+        shape.material.metalness = params.metalness;
+      });
+    });
+
+    // === Animation Loop ===
+    function animate() {
+      requestAnimationFrame(animate);
+
+      Object.entries(PARAMS.shapes).forEach(([name, params]) => {
+        const shape = shapes[name];
+        shape.rotation.x += params.rotationSpeedX;
+        shape.rotation.y += params.rotationSpeedY;
+        shape.rotation.z += params.rotationSpeedZ;
+      });
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      const aspect = (window.innerWidth - 300) / window.innerHeight;
+      camera.aspect = aspect;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth - 300, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
