@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Interface with Tweakpane</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #left-pane-container {
+      width: 300px;
+      height: 100%;
+      background-color: #f0f0f0;
+      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.2);
+      display: flex;
+      flex-direction: column;
+    }
+
+    #tweakpane-container {
+      width: 300px;
+      height: 100%;
+      background-color: #f0f0f0;
+      box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
+      margin-left: auto;
+    }
+
+    #threejs-container {
+      flex: 1;
+      display: flex;
+    }
+
+    .draggable-shape {
+      padding: 8px;
+      margin: 4px;
+      background: #ddd;
+      cursor: move;
+      user-select: none;
+    }
+
+    #trash {
+      padding: 20px;
+      margin: 10px;
+      background: #ff6666;
+      text-align: center;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #trash.drag-over {
+    background: #ff4444;
+    box-shadow: 0 0 8px rgba(255, 0, 0, 0.3);
+  }
+  </style>
+</head>
+<body>
+  <div id="left-pane-container">
+    <div id="shapes-folder"></div>
+    <div id="trash">🗑 Trash</div>
+  </div>
+  <div id="threejs-container"></div>
+  <div id="tweakpane-container"></div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.module.js';
+    import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
+
+    // === THREE.js Setup ===
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const container = document.getElementById('threejs-container');
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
+
+    // === Lights ===
+    const light = new THREE.PointLight(0xffffff, 1, 100);
+    light.position.set(10, 10, 10);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+    // === Shapes ===
+    const shapeTemplates = {
+      cube: {
+        geometry: new THREE.BoxGeometry(),
+        material: new THREE.MeshStandardMaterial({ color: 0x007bff, roughness: 0.5, metalness: 0.5 })
+      },
+      sphere: {
+        geometry: new THREE.SphereGeometry(0.75, 32, 32),
+        material: new THREE.MeshStandardMaterial({ color: 0xff5722, roughness: 0.5, metalness: 0.5 })
+      },
+      cone: {
+        geometry: new THREE.ConeGeometry(0.75, 1.5, 32),
+        material: new THREE.MeshStandardMaterial({ color: 0x8bc34a, roughness: 0.5, metalness: 0.5 })
+      },
+    };
+
+    // === Camera Setup ===
+    camera.position.z = 5;
+
+    // === Left Pane (Drag & Drop) ===
+    const leftPane = new Pane({ container: document.getElementById('shapes-folder') });
+    const shapesFolder = leftPane.addFolder({ title: 'Add Shapes' });
+    
+    ['cube', 'sphere', 'cone'].forEach((shapeType) => {
+      const div = document.createElement('div');
+      div.className = 'draggable-shape';
+      div.textContent = shapeType;
+      div.draggable = true;
+      
+      div.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', shapeType);
+      });
+      
+      shapesFolder.element.appendChild(div);
+    });
+
+    // Handle drop events for new shapes
+    container.addEventListener('dragover', (e) => e.preventDefault());
+    container.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const shapeType = e.dataTransfer.getData('text/plain');
+
+  if (!shapeTemplates[shapeType]) return;
+
+  const { geometry, material } = shapeTemplates[shapeType];
+
+  // Ensure color is different from the background
+  const newMaterial = new THREE.MeshStandardMaterial({ 
+    color: new THREE.Color(Math.random(), Math.random(), Math.random()), 
+    roughness: 0.5, 
+    metalness: 0.5 
+  });
+
+  const newShape = new THREE.Mesh(geometry.clone(), newMaterial);
+
+  // Place it where the mouse drops
+  const rect = container.getBoundingClientRect();
+  const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+  const vector = new THREE.Vector3(mouseX, mouseY, 0.5).unproject(camera);
+  newShape.position.set(vector.x, vector.y, -3);
+
+  newShape.userData.params = {
+    color: `#${newShape.material.color.getHexString()}`,
+    size: 1,
+    x: newShape.position.x,
+    y: newShape.position.y,
+    z: newShape.position.z,
+    rotationSpeedX: 0,
+    rotationSpeedY: 0,
+    rotationSpeedZ: 0,
+    roughness: 0.5,
+    metalness: 0.5
+  };
+
+  scene.add(newShape);
+  updateSelectedShapeControls(newShape);
+});
+
+
+    // === Right Pane (Controls) ===
+    const pane = new Pane({ container: document.getElementById('tweakpane-container') });
+    let currentShapeFolder = null;
+    let selectedShape = null;
+
+    // Global controls
+    const sceneParams = {
+      sceneColor: '#ffffff',
+      ambientLight: 0.5,
+      cameraZoom: 5
+    };
+
+    pane.addBinding(sceneParams, 'sceneColor', { label: 'Background Color' }).on('change', (v) => {
+      scene.background = new THREE.Color(v.value);
+    });
+
+    pane.addBinding(sceneParams, 'cameraZoom', {
+      label: 'Camera Zoom',
+      min: 1,
+      max: 10,
+      step: 0.1,
+    }).on('change', (v) => {
+      camera.position.z = v.value;
+    });
+
+    pane.addBinding(sceneParams, 'ambientLight', {
+      label: 'Ambient Light',
+      min: 0,
+      max: 1,
+      step: 0.1,
+    }).on('change', (v) => {
+      scene.children.find(c => c instanceof THREE.AmbientLight).intensity = v.value;
+    });
+
+    // === Shape Interaction ===
+    let isDragging = false;
+    let dragPlane = new THREE.Plane();
+    let dragOffset = new THREE.Vector3();
+
+    function getDraggableMeshes() {
+      return scene.children.filter(child => 
+        child instanceof THREE.Mesh && child.userData.params
+      );
+    }
+
+    function updateSelectedShapeControls(shape) {
+      if (currentShapeFolder) {
+        pane.remove(currentShapeFolder);
+        currentShapeFolder = null;
+      }
+    
+      if (!shape) return;
+    
+      currentShapeFolder = pane.addFolder({ title: 'Selected Shape', expanded: true });
+      const params = shape.userData.params;
+    
+      currentShapeFolder.addBinding(params, 'color', { label: 'Color' }).on('change', (v) => {
+        shape.material.color.set(v.value);
+      });
+    
+      currentShapeFolder.addBinding(params, 'size', { min: 0.5, max: 3, step: 0.1, label: 'Size' }).on('change', (v) => {
+        shape.scale.set(v.value, v.value, v.value);
+      });
+    
+      ['x', 'y', 'z'].forEach((axis) => {
+        currentShapeFolder.addBinding(params, axis, { min: -5, max: 5, step: 0.1, label: `Position ${axis.toUpperCase()}` }).on('change', (v) => {
+          shape.position[axis] = v.value;
+        });
+      });
+    
+      ['rotationSpeedX', 'rotationSpeedY', 'rotationSpeedZ'].forEach((axis) => {
+        currentShapeFolder.addBinding(params, axis, { min: 0, max: 0.1, step: 0.01, label: `Rotate ${axis.toUpperCase()}` });
+      });
+    
+      currentShapeFolder.addBinding(params, 'roughness', { min: 0, max: 1, step: 0.1, label: 'Roughness' }).on('change', (v) => {
+        shape.material.roughness = v.value;
+      });
+    
+      currentShapeFolder.addBinding(params, 'metalness', { min: 0, max: 1, step: 0.1, label: 'Metalness' }).on('change', (v) => {
+        shape.material.metalness = v.value;
+      });
+  }
+
+
+
+    // Mouse event handlers
+
+let raycaster = new THREE.Raycaster();
+let mouse = new THREE.Vector2();
+let plane = new THREE.Plane();
+let planeIntersect = new THREE.Vector3();
+
+// Modified pointer event handlers
+function onPointerDown(event) {
+    const rect = container.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(scene.children, false);
+
+    if (intersects.length > 0) {
+      selectedShape = intersects[0].object;
+      isDragging = true;
+
+      // Set drag plane normal to camera view direction
+      const cameraDirection = new THREE.Vector3();
+      camera.getWorldDirection(cameraDirection);
+      plane.setFromNormalAndCoplanarPoint(cameraDirection, selectedShape.position);
+      
+      // Calculate drag offset
+      raycaster.ray.intersectPlane(plane, planeIntersect);
+      dragOffset.copy(selectedShape.position).sub(planeIntersect);
+
+      updateSelectedShapeControls(selectedShape);
+    }
+  }
+
+  function onPointerMove(event) {
+    if (!isDragging || !selectedShape) return;
+
+    // Update mouse position for both canvas and trash detection
+    const mouseX = event.clientX;
+    const mouseY = event.clientY;
+
+    // Update 3D position
+    const rect = container.getBoundingClientRect();
+    mouse.x = ((mouseX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((mouseY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    
+    if (raycaster.ray.intersectPlane(plane, planeIntersect)) {
+      selectedShape.position.copy(planeIntersect.add(dragOffset));
+      selectedShape.userData.params.x = selectedShape.position.x;
+      selectedShape.userData.params.y = selectedShape.position.y;
+      selectedShape.userData.params.z = selectedShape.position.z;
+    }
+
+    // Check trash hover state
+    const trash = document.getElementById('trash');
+    const trashRect = trash.getBoundingClientRect();
+    const isOverTrash = (
+      mouseX >= trashRect.left &&
+      mouseX <= trashRect.right &&
+      mouseY >= trashRect.top &&
+      mouseY <= trashRect.bottom
+    );
+
+    trash.classList.toggle('drag-over', isOverTrash);
+  }
+
+  function onPointerUp(event) {
+    if (!selectedShape) return;
+
+    const trash = document.getElementById('trash');
+    trash.classList.remove('drag-over');
+
+    // Check if dropped in trash
+    const rect = trash.getBoundingClientRect();
+    if (
+      event.clientX >= rect.left &&
+      event.clientX <= rect.right &&
+      event.clientY >= rect.top &&
+      event.clientY <= rect.bottom
+    ) {
+      scene.remove(selectedShape);
+      selectedShape.geometry.dispose();
+      selectedShape.material.dispose();
+
+      if (currentShapeFolder) {
+        pane.remove(currentShapeFolder);
+        currentShapeFolder = null;
+      }
+    }
+
+    isDragging = false;
+    selectedShape = null;
+  }
+
+  // Update event listeners to use document for better drag tracking
+  container.addEventListener('pointerdown', onPointerDown);
+  document.addEventListener('pointermove', onPointerMove);
+  document.addEventListener('pointerup', onPointerUp);
+
+
+    // === Animation Loop ===
+    function animate() {
+      requestAnimationFrame(animate);
+
+      scene.children.forEach(obj => {
+        if (obj.userData.params) {
+          obj.rotation.x += obj.userData.params.rotationSpeedX;
+          obj.rotation.y += obj.userData.params.rotationSpeedY;
+          obj.rotation.z += obj.userData.params.rotationSpeedZ;
+        }
+      });
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      const container = document.getElementById('threejs-container');
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+  </script>
+</body>
+</html>
