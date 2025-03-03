@@ -15,7 +15,7 @@
     #left-pane-container {
       width: 300px;
       height: 100%;
-      background-color: black;
+      background-color: #f0f0f0;
       box-shadow: -2px 0 8px rgba(0, 0, 0, 0.2);
       display: flex;
       flex-direction: column;
@@ -24,7 +24,7 @@
     #tweakpane-container {
       width: 300px;
       height: 100%;
-      background-color: black;
+      background-color: #f0f0f0;
       box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
       margin-left: auto;
     }
@@ -34,26 +34,13 @@
       display: flex;
     }
 
-    /* .draggable-shape {
+    .draggable-shape {
       padding: 8px;
       margin: 4px;
       background: #ddd;
       cursor: move;
       user-select: none;
-    } */
-
-      /* Add this to your existing styles */
-  .draggable-shape {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 40px;
-    height: 40px;
-  }
-  .draggable-shape img {
-    width: 24px;
-    height: 24px;
-  }
+    }
 
     #trash {
       padding: 20px;
@@ -67,28 +54,12 @@
     background: #ff4444;
     box-shadow: 0 0 8px rgba(255, 0, 0, 0.3);
   }
-  @media (max-width: 768px) {
-    body {
-      flex-direction: column;
-    }
-
-    #left-pane-container, #tweakpane-container {
-      width: 100%;
-      height: auto;
-      flex-shrink: 0;
-    }
-
-    #threejs-container {
-      height: 50vh;
-    }
-  }
-
   </style>
 </head>
 <body>
   <div id="left-pane-container">
     <div id="shapes-folder"></div>
-    <div id="trash">🗑 </div>
+    <div id="trash">🗑 Trash</div>
   </div>
   <div id="threejs-container"></div>
   <div id="tweakpane-container"></div>
@@ -133,42 +104,19 @@
     // === Left Pane (Drag & Drop) ===
     const leftPane = new Pane({ container: document.getElementById('shapes-folder') });
     const shapesFolder = leftPane.addFolder({ title: 'Add Shapes' });
-
-    const shapeIcons = {
-      cube: 'icons/cube.svg',
-      sphere: 'icons/sphere.svg',
-      cone: 'icons/cone.svg'
-    };
-
-    Object.entries(shapeIcons).forEach(([shapeType, iconPath]) => {
+    
+    ['cube', 'sphere', 'cone'].forEach((shapeType) => {
       const div = document.createElement('div');
       div.className = 'draggable-shape';
+      div.textContent = shapeType;
       div.draggable = true;
-      
-      const img = document.createElement('img');
-      img.src = iconPath;
-      img.alt = shapeType;
-      div.appendChild(img);
       
       div.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('text/plain', shapeType);
       });
-
+      
       shapesFolder.element.appendChild(div);
     });
-    
-    // ['cube', 'sphere', 'cone'].forEach((shapeType) => {
-    //   const div = document.createElement('div');
-    //   div.className = 'draggable-shape';
-    //   div.textContent = shapeType;
-    //   div.draggable = true;
-      
-    //   div.addEventListener('dragstart', (e) => {
-    //     e.dataTransfer.setData('text/plain', shapeType);
-    //   });
-      
-    //   shapesFolder.element.appendChild(div);
-    // });
 
     // Handle drop events for new shapes
     container.addEventListener('dragover', (e) => e.preventDefault());
@@ -195,12 +143,7 @@
   const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
   const vector = new THREE.Vector3(mouseX, mouseY, 0.5).unproject(camera);
-  //added
-  const dir = vector.sub(camera.position).normalize();
-  const distance = -camera.position.z / dir.z;
-  const pos = camera.position.clone().add(dir.multiplyScalar(distance));
-
-  newShape.position.copy(pos);
+  newShape.position.set(vector.x, vector.y, -3);
 
   newShape.userData.params = {
     color: `#${newShape.material.color.getHexString()}`,
@@ -214,7 +157,6 @@
     roughness: 0.5,
     metalness: 0.5
   };
-
 
   scene.add(newShape);
   updateSelectedShapeControls(newShape);
@@ -405,29 +347,6 @@ function onPointerDown(event) {
   container.addEventListener('pointerdown', onPointerDown);
   document.addEventListener('pointermove', onPointerMove);
   document.addEventListener('pointerup', onPointerUp);
-  //added
-  container.addEventListener('touchstart', onTouchStart, { passive: false });
-  document.addEventListener('touchmove', onTouchMove, { passive: false });
-  document.addEventListener('touchend', onTouchEnd);
-
-  function onTouchStart(event) {
-    event.preventDefault();
-    const touch = event.touches[0];
-    onPointerDown({ clientX: touch.clientX, clientY: touch.clientY });
-  }
-  
-  function onTouchMove(event) {
-    event.preventDefault();
-    const touch = event.touches[0];
-    onPointerMove({ clientX: touch.clientX, clientY: touch.clientY });
-  }
-  
-  function onTouchEnd(event) {
-    const touch = event.changedTouches[0];
-    onPointerUp({ clientX: touch.clientX, clientY: touch.clientY });
-  }
-
-
 
 
     // === Animation Loop ===
@@ -448,26 +367,12 @@ function onPointerDown(event) {
     animate();
 
     // Handle window resize
-    // window.addEventListener('resize', () => {
-    //   const container = document.getElementById('threejs-container');
-    //   camera.aspect = container.clientWidth / container.clientHeight;
-    //   camera.updateProjectionMatrix();
-    //   renderer.setSize(container.clientWidth, container.clientHeight);
-    // });
     window.addEventListener('resize', () => {
       const container = document.getElementById('threejs-container');
       camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(container.clientWidth, container.clientHeight);
-
-      // Update camera position based on device orientation
-      if (window.innerWidth <= 768) {
-        camera.position.z = 7; // Increase camera distance for mobile
-      } else {
-        camera.position.z = 5; // Reset to original distance for desktop
-      }
     });
-
   </script>
 </body>
 </html>
